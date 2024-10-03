@@ -88,6 +88,9 @@ pub fn derive_metronom(item: TokenStream) -> TokenStream {
                 let metrics = Self {
                     #(#fields),*
                 };
+
+                #(registry.registry(Box::new(metrics.#fields.clone()))?;)*
+
                 Ok(metrics)
             }
         }
