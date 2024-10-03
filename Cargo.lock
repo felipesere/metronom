@@ -123,7 +123,10 @@ name = "metronom"
 version = "0.1.0"
 dependencies = [
  "bon",
+ "darling",
  "prometheus",
+ "quote",
+ "syn",
 ]
 
 [[package]]
