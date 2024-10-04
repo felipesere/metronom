@@ -41,6 +41,7 @@ pub fn derive_metronom(item: TokenStream) -> TokenStream {
     let field_idents: Vec<_> = fields.iter().map(|f| f.ident.clone()).collect();
     let initializers = create_initialzers(&fields);
     let field_label_builders = create_field_label_builders(&fields);
+    let metric_accessors = create_metric_accessors(&fields);
 
     let name = struct_data.ident;
 
@@ -60,6 +61,8 @@ pub fn derive_metronom(item: TokenStream) -> TokenStream {
 
                 Ok(metrics)
             }
+
+          #(#metric_accessors)*
         }
     };
 
@@ -111,8 +114,7 @@ fn create_field_label_builders(fields: &[MetricFieldOptions]) -> Vec<proc_macro2
 
             let ident = field.ident.unwrap();
             let struct_name = ident.to_string().to_upper_camel_case();
-            let struct_name_span = ident.span();
-            let struct_ident = proc_macro2::Ident::new(&struct_name, struct_name_span);
+            let struct_ident = proc_macro2::Ident::new(&struct_name, ident.span());
 
             let struct_fields: Vec<_> = field
                 .labels
@@ -148,6 +150,43 @@ fn create_field_label_builders(fields: &[MetricFieldOptions]) -> Vec<proc_macro2
                 fn values(&self) -> Vec<&str> {
                   vec![#(&#values),*]
                 }
+              }
+            }
+        })
+        .collect()
+}
+
+fn create_metric_accessors(fields: &[MetricFieldOptions]) -> Vec<proc_macro2::TokenStream> {
+    fields
+        .iter()
+        .map(|field| {
+            let field = field.clone();
+            let ident = field.ident.unwrap();
+
+            let known_field_name = ident.to_string();
+            let fn_name = format!("{known_field_name}_with");
+            let struct_name = known_field_name.to_upper_camel_case();
+            let struct_ident = proc_macro2::Ident::new(&struct_name, ident.span());
+            let metric_accessor = proc_macro2::Ident::new(&fn_name, ident.span());
+
+            let type_name_ident = match &field.ty {
+                syn::Type::Path(ref tp) => tp.path.segments.first().unwrap().ident.clone(),
+                _ => unreachable!(),
+            };
+
+            let return_type = if type_name_ident == "IntCounterVec" {
+                quote! {
+                    GenericCounter<AtomicU64>
+                }
+            } else {
+                quote! {
+                    Histogram
+                }
+            };
+
+            quote! {
+              fn #metric_accessor(&self, values: #struct_ident) -> #return_type {
+                self.#ident.with_label_values(&values.values())
               }
             }
         })
