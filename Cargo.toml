@@ -11,6 +11,7 @@ prometheus = "0.13.3"
 quote = "1"
 syn = "2"
 darling = "0.20"
+proc-macro2 = "1.0.86"
 
 [lib]
 proc-macro = true

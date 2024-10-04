@@ -14,7 +14,7 @@ struct MetronomStruct {
     data: ast::Data<(), MetricFieldOptions>,
 }
 
-#[derive(FromField, Debug)]
+#[derive(FromField, Debug, Clone)]
 #[darling(attributes(metronom), forward_attrs(ident, ty))]
 struct MetricFieldOptions {
     /// Get the ident of the field. For fields in tuple or newtype structs or
@@ -33,52 +33,14 @@ struct MetricFieldOptions {
 #[proc_macro_derive(Metronom, attributes(metronom))]
 pub fn derive_metronom(item: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(item as DeriveInput);
-    let x = MetronomStruct::from_derive_input(&ast).unwrap();
+    let struct_data = MetronomStruct::from_derive_input(&ast).unwrap();
 
-    let (fields, initializers): (Vec<_>, Vec<_>) = x
-        .data
-        .take_struct()
-        .map(|f| {
-            f.fields
-                .into_iter()
-                .map(|f| {
-                    let field_name = f.ident.unwrap();
-                    let ty = f.ty.clone();
-                    let type_name_ident = match f.ty {
-                        syn::Type::Path(tp) => tp.path.segments.first().unwrap().ident.clone(),
-                        _ => unreachable!(),
-                    };
-                    let metric_name = f.name;
-                    let metric_help = f.help;
-                    let buckets = f.buckets;
-                    let labels = f.labels;
+    let fields: Vec<_> = struct_data.data.take_struct().map(|f| f.fields).unwrap();
 
-                    let opts = if type_name_ident == "IntCounterVec" {
-                        quote! {
-                            Opts::new(#metric_name, #metric_help)
-                        }
-                    } else {
-                        let my_buckets = buckets.unwrap();
-                        quote! {
-                            HistogramOpts::new(#metric_name, #metric_help).buckets(vec![#(#my_buckets),*])
-                        }
-                    };
+    let field_idents: Vec<_> = fields.iter().map(|f| f.ident.clone()).collect();
+    let initializers = create_initialzers(&fields);
 
-                    (
-                        field_name.clone(),
-                        quote! {
-                            let #field_name = #ty::new(
-                                #opts,
-                                &[#(#labels),*],
-                            ).unwrap();
-                        },
-                    )
-                })
-                .unzip()
-        })
-        .unwrap();
-
-    let name = x.ident;
+    let name = struct_data.ident;
 
     let impl_struct_new = quote! {
         impl #name {
@@ -86,10 +48,10 @@ pub fn derive_metronom(item: TokenStream) -> TokenStream {
                 #(#initializers)*
 
                 let metrics = Self {
-                    #(#fields),*
+                    #(#field_idents),*
                 };
 
-                #(registry.register(Box::new(metrics.#fields.clone()))?;)*
+                #(registry.register(Box::new(metrics.#field_idents.clone()))?;)*
 
                 Ok(metrics)
             }
@@ -97,4 +59,42 @@ pub fn derive_metronom(item: TokenStream) -> TokenStream {
     };
 
     impl_struct_new.into()
+}
+
+fn create_initialzers(fields: &[MetricFieldOptions]) -> Vec<proc_macro2::TokenStream> {
+    fields
+        .iter()
+        .map(|field| {
+            let field = field.clone();
+            let ty = field.ty;
+            let field_name = field.ident;
+            let metric_name = field.name;
+            let metric_help = field.help;
+            let buckets = field.buckets;
+            let labels = field.labels;
+
+            let type_name_ident = match &ty {
+                syn::Type::Path(ref tp) => tp.path.segments.first().unwrap().ident.clone(),
+                _ => unreachable!(),
+            };
+
+            let opts = if type_name_ident == "IntCounterVec" {
+                quote! {
+                    Opts::new(#metric_name, #metric_help)
+                }
+            } else {
+                let my_buckets = buckets.unwrap();
+                quote! {
+                    HistogramOpts::new(#metric_name, #metric_help).buckets(vec![#(#my_buckets),*])
+                }
+            };
+
+            quote! {
+                let #field_name = #ty::new(
+                    #opts,
+                    &[#(#labels),*],
+                ).unwrap();
+            }
+        })
+        .collect()
 }
