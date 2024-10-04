@@ -126,6 +126,7 @@ fn create_field_label_builders(fields: &[MetricFieldOptions]) -> Vec<proc_macro2
                 .iter()
                 .map(|ident| {
                     quote! {
+                      #[builder(into)]
                       #ident: String,
                     }
                 })
