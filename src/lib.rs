@@ -50,7 +50,7 @@ pub fn derive_metronom(item: TokenStream) -> TokenStream {
         #(#field_label_builders)*
 
         impl #name {
-            fn new(registry: &Registry) -> Result<Self, prometheus::Error> {
+            pub fn new(registry: &Registry) -> Result<Self, prometheus::Error> {
                 #(#initializers)*
 
                 let metrics = Self {
@@ -142,7 +142,7 @@ fn create_field_label_builders(fields: &[MetricFieldOptions]) -> Vec<proc_macro2
 
             quote! {
               #[derive(::bon::Builder)]
-              struct #struct_ident {
+              pub struct #struct_ident {
                 #(#struct_fields_declaration)*
               }
 
@@ -185,7 +185,7 @@ fn create_metric_accessors(fields: &[MetricFieldOptions]) -> Vec<proc_macro2::To
             };
 
             quote! {
-              fn #metric_accessor(&self, values: #struct_ident) -> #return_type {
+              pub fn #metric_accessor(&self, values: #struct_ident) -> #return_type {
                 self.#ident.with_label_values(&values.values())
               }
             }
