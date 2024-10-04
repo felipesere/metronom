@@ -1,4 +1,5 @@
 use darling::{ast, FromDeriveInput, FromField};
+use heck::ToUpperCamelCase;
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput, LitFloat, LitStr};
@@ -39,10 +40,14 @@ pub fn derive_metronom(item: TokenStream) -> TokenStream {
 
     let field_idents: Vec<_> = fields.iter().map(|f| f.ident.clone()).collect();
     let initializers = create_initialzers(&fields);
+    let field_label_builders = create_field_label_builders(&fields);
 
     let name = struct_data.ident;
 
     let impl_struct_new = quote! {
+
+        #(#field_label_builders)*
+
         impl #name {
             fn new(registry: &Registry) -> Result<Self, prometheus::Error> {
                 #(#initializers)*
@@ -94,6 +99,56 @@ fn create_initialzers(fields: &[MetricFieldOptions]) -> Vec<proc_macro2::TokenSt
                     #opts,
                     &[#(#labels),*],
                 ).unwrap();
+            }
+        })
+        .collect()
+}
+fn create_field_label_builders(fields: &[MetricFieldOptions]) -> Vec<proc_macro2::TokenStream> {
+    fields
+        .iter()
+        .map(|field| {
+            let field = field.clone();
+
+            let ident = field.ident.unwrap();
+            let struct_name = ident.to_string().to_upper_camel_case();
+            let struct_name_span = ident.span();
+            let struct_ident = proc_macro2::Ident::new(&struct_name, struct_name_span);
+
+            let struct_fields: Vec<_> = field
+                .labels
+                .iter()
+                .map(|label| proc_macro2::Ident::new(&label.value(), label.span()))
+                .collect();
+
+            let struct_fields_declaration: Vec<_> = struct_fields
+                .iter()
+                .map(|ident| {
+                    quote! {
+                      #ident: String,
+                    }
+                })
+                .collect();
+
+            let values: Vec<_> = struct_fields
+                .iter()
+                .map(|label| {
+                    quote! {
+                      self.#label
+                    }
+                })
+                .collect();
+
+            quote! {
+              #[derive(::bon::Builder)]
+              struct #struct_ident {
+                #(#struct_fields_declaration)*
+              }
+
+              impl #struct_ident {
+                fn values(&self) -> Vec<&str> {
+                  vec![#(&#values),*]
+                }
+              }
             }
         })
         .collect()
