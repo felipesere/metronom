@@ -89,7 +89,7 @@ pub fn derive_metronom(item: TokenStream) -> TokenStream {
                     #(#fields),*
                 };
 
-                #(registry.registry(Box::new(metrics.#fields.clone()))?;)*
+                #(registry.register(Box::new(metrics.#fields.clone()))?;)*
 
                 Ok(metrics)
             }
